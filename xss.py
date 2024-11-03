@@ -6,8 +6,6 @@ import re
 import random
 import time
 import base64
-import tkinter as tk
-from tkinter import messagebox
 
 # حمولات XSS بعد تشويشها
 xss_payloads = [
@@ -169,36 +167,19 @@ def test_csrf(url):
     except requests.exceptions.RequestException as e:
         print(f"[!] Error testing CSRF: {e}")
 
-# واجهة المستخدم الرسومية باستخدام Tkinter
-def start_gui():
-    def run_scan():
-        base_url = url_entry.get()
-        init_report()
-        links = extract_links(base_url)
-        for link in links:
-            run_sqlmap(link)
-            test_xss(link, "id")
-            test_file_inclusion(link)
-            test_command_injection(link, "cmd")
-            test_csrf(link)
-        close_report()
-        messagebox.showinfo("Scan Complete", f"Scan complete. Results saved in {report_file}")
-
-    root = tk.Tk()
-    root.title("AutoVulnScanner GUI")
-
-    tk.Label(root, text="Enter Target URL:").grid(row=0, column=0, padx=5, pady=5)
-    url_entry = tk.Entry(root, width=50)
-    url_entry.grid(row=0, column=1, padx=5, pady=5)
-
-    scan_button = tk.Button(root, text="Run Scan", command=run_scan)
-    scan_button.grid(row=1, column=1, padx=5, pady=5)
-
-    root.mainloop()
-
 # التشغيل الرئيسي
 def main():
-    start_gui()
+    base_url = input("Enter the target URL (e.g., http://example.com): ")
+    init_report()
+    links = extract_links(base_url)
+    for link in links:
+        run_sqlmap(link)
+        test_xss(link, "id")
+        test_file_inclusion(link)
+        test_command_injection(link, "cmd")
+        test_csrf(link)
+    close_report()
+    print(f"[*] Scan complete. Results saved in {report_file}")
 
 # تنفيذ الأداة
 if __name__ == "__main__":
